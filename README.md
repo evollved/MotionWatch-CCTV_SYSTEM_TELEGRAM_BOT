@@ -54,7 +54,7 @@
 [
   {
     "id": 1,
-    "name": "Балкон",
+    "name": "Cam1",
     "rtsp_url": "rtsp://192.168.2.5:554/user=video_password=video_channel=0_stream=1&onvif=0.sdp?real_stream",
     "width": 800,
     "height": 448,
@@ -63,7 +63,7 @@
     "detect_objects": true,
     "object_types": ["dog", "cat", "person", "bird", "car"],
     "object_confidence": 0.2,
-    "telegram_chat_id": "-1002267390790",
+    "telegram_chat_id": "-1009999999997",
     "send_photo": true,
     "send_video": true,
     "draw_boxes": true,
