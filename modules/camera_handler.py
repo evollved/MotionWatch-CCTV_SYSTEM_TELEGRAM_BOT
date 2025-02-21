@@ -1,4 +1,3 @@
-
 import cv2
 import threading
 import time
@@ -12,6 +11,7 @@ import asyncio
 from ultralytics import YOLO
 import aiohttp
 import collections
+import aiofiles.os as aio_os  # Импортируем асинхронную версию os
 
 class CameraHandler(threading.Thread):
     def __init__(self, camera_config, telegram_config):
@@ -80,7 +80,7 @@ class CameraHandler(threading.Thread):
                 return None
 
             frame = frame.reshape((self.frame_height, self.frame_width, 3))
-            return frame
+            return frame.copy()  # Возвращаем копию кадра
 
         except Exception as e:
             print(f"Ошибка при захвате кадра FFmpeg: {e}")
@@ -96,8 +96,11 @@ class CameraHandler(threading.Thread):
                     print("Не удалось захватить кадр.")
                     break
 
+                # Создаем копию кадра для обработки
+                frame_copy = frame.copy()
+
                 # Обработка движения
-                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                gray = cv2.cvtColor(frame_copy, cv2.COLOR_BGR2GRAY)
                 gray = cv2.GaussianBlur(gray, (21, 21), 0)
 
                 if bg_frame is None:
@@ -113,11 +116,11 @@ class CameraHandler(threading.Thread):
                     if cv2.contourArea(contour) < self.motion_sensitivity:
                         continue
                     (x, y, w, h) = cv2.boundingRect(contour)
-                    cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                    cv2.rectangle(frame_copy, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
                 # Обнаружение объектов (если включено)
                 if self.detect_objects:
-                    results = self.model(frame, conf=self.object_confidence)
+                    results = self.model(frame_copy, conf=self.object_confidence)
                     detected_objects = results[0].boxes
 
                     for obj in detected_objects:
@@ -125,11 +128,11 @@ class CameraHandler(threading.Thread):
                             label = self.model.names[obj.cls]
                             confidence = obj.conf
                             (x, y, w, h) = obj.xyxy[0].int().tolist()
-                            cv2.rectangle(frame, (x, y), (w, h), (255, 0, 0), 2)
-                            cv2.putText(frame, f"{label} {confidence:.2f}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
+                            cv2.rectangle(frame_copy, (x, y), (w, h), (255, 0, 0), 2)
+                            cv2.putText(frame_copy, f"{label} {confidence:.2f}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 2)
 
                 # Отображение кадра с результатами обработки
-                cv2.imshow(f"Обработанное видео: {self.name}", frame)
+                cv2.imshow(f"Обработанное видео: {self.name}", frame_copy)
 
                 # Выход по нажатию клавиши 'q'
                 if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -274,7 +277,7 @@ class CameraHandler(threading.Thread):
             filename = f"test_frame_{self.name}_{timestamp}.jpg"
             cv2.imwrite(filename, frame)
             await self.send_telegram_photo_async(frame, message=f"Тестовый кадр с камеры {self.name}")
-            os.remove(filename)
+            await aio_os.remove(filename)  # Асинхронное удаление файла
         else:
             print(f"Не удалось захватить тестовый кадр с камеры {self.name}")
 
@@ -321,10 +324,10 @@ class CameraHandler(threading.Thread):
 
                 if process_convert.returncode != 0:
                     print(f"Ошибка FFmpeg при перекодировании тестового видео.")
-                    os.remove(temp_filename)
+                    await aio_os.remove(temp_filename)  # Асинхронное удаление временного файла
                     return
             else:
-                os.rename(temp_filename, filename)
+                await aio_os.rename(temp_filename, filename)  # Асинхронное переименование
 
             # Отправляем видео в Telegram
             await self.send_telegram_video_async(filename, message=f"Тестовое видео с камеры {self.name}")
@@ -332,10 +335,10 @@ class CameraHandler(threading.Thread):
         except Exception as e:
             print(f"Ошибка при записи тестового видео: {e}")
         finally:
-            if os.path.exists(temp_filename):
-                os.remove(temp_filename)
-            if os.path.exists(filename):
-                os.remove(filename)
+            if await aio_os.path.exists(temp_filename):
+                await aio_os.remove(temp_filename)  # Асинхронное удаление временного файла
+            if await aio_os.path.exists(filename):
+                await aio_os.remove(filename)  # Асинхронное удаление финального файла
 
     async def record_video_with_buffer(self, duration=6):
         """Записывает видео с буфером (10 секунд до движения) и продолжает запись после."""
@@ -385,10 +388,10 @@ class CameraHandler(threading.Thread):
 
                 if process_convert.returncode != 0:
                     print(f"Ошибка FFmpeg при перекодировании видео: {stderr.decode()}")
-                    await aio_os.remove(temp_filename)
+                    await aio_os.remove(temp_filename)  # Асинхронное удаление временного файла
                     return
             else:
-                await aio_os.rename(temp_filename, filename)
+                await aio_os.rename(temp_filename, filename)  # Асинхронное переименование
 
             # Отправляем видео в Telegram
             print(f"Отправка видео в Telegram: {filename}")
@@ -398,9 +401,9 @@ class CameraHandler(threading.Thread):
             print(f"Ошибка при записи/перекодировании видео: {e}")
         finally:
             if await aio_os.path.exists(temp_filename):
-                await aio_os.remove(temp_filename)
+                await aio_os.remove(temp_filename)  # Асинхронное удаление временного файла
             if await aio_os.path.exists(filename):
-                await aio_os.remove(filename)
+                await aio_os.remove(filename)  # Асинхронное удаление финального файла
 
     async def send_telegram_photo_async(self, frame, message="Движение обнаружено!"):
         """Асинхронная отправка фото в Telegram."""
@@ -427,7 +430,7 @@ class CameraHandler(threading.Thread):
                         else:
                             print("Фото успешно отправлено в Telegram.")  # Логирование
 
-            os.remove(filename)
+            await aio_os.remove(filename)  # Асинхронное удаление файла
         except Exception as e:
             print(f"Ошибка при отправке фото в Telegram: {e}")
 
