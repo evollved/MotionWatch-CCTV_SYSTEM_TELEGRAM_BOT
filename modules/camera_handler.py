@@ -28,7 +28,7 @@ class CameraHandler(threading.Thread):
         self.camera_height = camera_config.get('height')
         self.detect_motion = camera_config['detect_motion']
         self.detect_objects = camera_config['detect_objects']
-        self.object_types = camera_config.get('object_types', [])  # Типы объектов для обнаружения
+        self.object_types = ["person", "cat", "dog"]  # Только люди, коты и собаки
         self.object_confidence = camera_config.get('object_confidence', 0.5)  # Порог уверенности для объектов
         self.telegram_chat_id = camera_config['telegram_chat_id']
         self.send_photo = camera_config['send_photo']
@@ -110,7 +110,7 @@ class CameraHandler(threading.Thread):
                     continue
 
                 frame_delta = cv2.absdiff(bg_frame, gray)
-                thresh = cv2.threshold(frame_delta, 25, 255, cv2.THRESH_BINARY)[1]
+                thresh = cv2.threshold(frame_delta, self.motion_sensitivity, 255, cv2.THRESH_BINARY)[1]
                 thresh = cv2.dilate(thresh, None, iterations=2)
                 contours, _ = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -215,7 +215,6 @@ class CameraHandler(threading.Thread):
                                 self.motion_detected = True
                                 self.last_motion_time = datetime.now()
 
-                                # Обнаружение объектов (если включено)
                                 if self.detect_objects:
                                     results = self.model(frame, conf=self.object_confidence, classes=[0, 15, 16])  # Только люди, коты и собаки
                                     detected_objects = results[0].boxes
@@ -475,11 +474,6 @@ class CameraHandler(threading.Thread):
     def stop(self):
         """Останавливает поток."""
         self.is_running = False
-
-    def restart(self):
-        """Перезапускает поток."""
-        self.stop()
-        self.start()
 
     def run(self):
         asyncio.set_event_loop(self.loop)
