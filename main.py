@@ -4,6 +4,7 @@ import time
 import os
 import asyncio
 from modules.camera_handler import CameraHandler
+from telegram_bot import start_telegram_bot
 
 def load_config(filename):
     """Загружает конфигурацию из JSON файла."""
@@ -45,6 +46,9 @@ def main():
     if not validate_camera_config(cameras_config):
         print("Обнаружены ошибки в конфигурации камер. Завершение работы.")
         return
+
+    # Запуск Telegram бота
+    start_telegram_bot(telegram_config["bot_token"], cameras_config)
 
     threads = []
     for camera in cameras_config:
