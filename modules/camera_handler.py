@@ -12,12 +12,14 @@ from ultralytics import YOLO
 import aiohttp
 import collections
 import aiofiles.os as aio_os  # Импортируем асинхронную версию os
+import torch  # Для проверки доступности GPU
 
 class CameraHandler(threading.Thread):
-    def __init__(self, camera_config, telegram_config):
+    def __init__(self, camera_config, telegram_config, device="cpu"):
         threading.Thread.__init__(self)
         self.camera_config = camera_config
         self.telegram_config = telegram_config
+        self.device = device  # Устройство для выполнения модели (CPU или GPU)
         self.camera_id = camera_config['id']
         self.name = camera_config['name']
         self.rtsp_url = camera_config['rtsp_url']
@@ -46,11 +48,11 @@ class CameraHandler(threading.Thread):
         self.last_frame = None
         self.last_motion_time = None
         self.motion_threshold = 1000
-        self.min_motion_frames = 5
+        self.min_motion_frames = 3  # Меньше кадров для подтверждения движения
         self.loop = asyncio.new_event_loop()
-        self.model = YOLO("yolov8n.pt")  # Загружаем модель YOLOv8
+        self.model = YOLO("yolov8n.pt").to(self.device)  # Используем nano-модель YOLOv8
         self.fps = 30  # Предполагаемый FPS (можно настроить)
-        self.buffer_size = int(10 * self.fps)  # 10 секунд буфера
+        self.buffer_size = int(30 * self.fps)  # Увеличенный буфер до 30 секунд
         self.frame_buffer = collections.deque(maxlen=self.buffer_size)  # Кольцевой буфер
         self.show_live_feed = camera_config.get("show_live_feed", False)  # Новый параметр для отображения видео
 
@@ -108,7 +110,7 @@ class CameraHandler(threading.Thread):
                     continue
 
                 frame_delta = cv2.absdiff(bg_frame, gray)
-                thresh = cv2.threshold(frame_delta, self.motion_sensitivity, 255, cv2.THRESH_BINARY)[1]
+                thresh = cv2.threshold(frame_delta, 25, 255, cv2.THRESH_BINARY)[1]
                 thresh = cv2.dilate(thresh, None, iterations=2)
                 contours, _ = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -120,7 +122,7 @@ class CameraHandler(threading.Thread):
 
                 # Обнаружение объектов (если включено)
                 if self.detect_objects:
-                    results = self.model(frame_copy, conf=self.object_confidence)
+                    results = self.model(frame_copy, conf=self.object_confidence, classes=[0, 15, 16])  # Только люди, коты и собаки
                     detected_objects = results[0].boxes
 
                     for obj in detected_objects:
@@ -185,7 +187,7 @@ class CameraHandler(threading.Thread):
                     self.frame_buffer.append(frame)  # Добавляем кадр в буфер
 
                     self.frame_count += 1
-                    if self.frame_count % 5 == 0:
+                    if self.frame_count % 3 == 0:  # Обрабатываем каждый 3-й кадр
                         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
                         gray = cv2.GaussianBlur(gray, (21, 21), 0)
 
@@ -206,22 +208,30 @@ class CameraHandler(threading.Thread):
                             break
 
                         if motion_detected:
+                            print(f"Движение обнаружено в кадре {self.frame_count}")  # Логирование
                             self.motion_frame_count += 1
                             if self.motion_frame_count >= self.min_motion_frames:
+                                print(f"Движение подтверждено, начало записи видео...")  # Логирование
                                 self.motion_detected = True
                                 self.last_motion_time = datetime.now()
 
+                                # Обнаружение объектов (если включено)
                                 if self.detect_objects:
-                                    results = self.model(frame, conf=self.object_confidence)
+                                    results = self.model(frame, conf=self.object_confidence, classes=[0, 15, 16])  # Только люди, коты и собаки
                                     detected_objects = results[0].boxes
 
                                     # Фильтруем объекты по типам
                                     filtered_objects = []
+                                    object_counts = {}  # Словарь для подсчета количества объектов каждого типа
                                     for obj in detected_objects:
                                         class_name = self.model.names[int(obj.cls)]  # Получаем название класса
-                                        print(f"Обнаружен объект: {class_name}")  # Логирование
                                         if class_name in self.object_types:  # Сравниваем с object_types
                                             filtered_objects.append(obj)
+                                            # Подсчитываем количество объектов каждого типа
+                                            if class_name in object_counts:
+                                                object_counts[class_name] += 1
+                                            else:
+                                                object_counts[class_name] = 1
 
                                     print(f"Всего обнаружено объектов: {len(detected_objects)}, отфильтровано: {len(filtered_objects)}")  # Логирование
 
@@ -230,12 +240,17 @@ class CameraHandler(threading.Thread):
                                         if self.draw_boxes:
                                             frame = results[0].plot()  # Рисуем рамки на кадре
 
+                                        # Формируем сообщение с информацией об объектах
+                                        object_message = "Обнаружены объекты:\n"
+                                        for obj_type, count in object_counts.items():
+                                            object_message += f"- {obj_type}: {count}\n"
+
                                         if self.send_photo:
                                             print("Попытка отправки фото в Telegram...")  # Логирование
-                                            await self.send_telegram_photo_async(frame)
+                                            await self.send_telegram_photo_async(frame, message=object_message)  # Передаем сообщение об объектах
                                         if self.send_video:
                                             print("Попытка отправки видео в Telegram...")  # Логирование
-                                            await self.record_video_with_buffer(duration=6)
+                                            await self.record_video_with_buffer(duration=15, message=object_message)  # Увеличено до 15 секунд
                                     else:
                                         print("Нет объектов, соответствующих фильтру.")  # Логирование
 
@@ -246,7 +261,7 @@ class CameraHandler(threading.Thread):
                                         await self.send_telegram_photo_async(frame)
                                     if self.send_video:
                                         print("Попытка отправки видео в Telegram...")  # Логирование
-                                        await self.record_video_with_buffer(duration=6)
+                                        await self.record_video_with_buffer(duration=15)  # Увеличено до 15 секунд
 
                                 self.motion_frame_count = 0
 
@@ -340,8 +355,8 @@ class CameraHandler(threading.Thread):
             if await aio_os.path.exists(filename):
                 await aio_os.remove(filename)  # Асинхронное удаление финального файла
 
-    async def record_video_with_buffer(self, duration=6):
-        """Записывает видео с буфером (10 секунд до движения) и продолжает запись после."""
+    async def record_video_with_buffer(self, duration=15, message="Движение обнаружено!"):
+        """Записывает видео с буфером (30 секунд до движения) и продолжает запись после."""
         timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
         filename = f"motion_video_{self.name}_{timestamp}.mp4"
         temp_filename = f"temp_video_{self.name}_{timestamp}.mp4"
@@ -395,7 +410,7 @@ class CameraHandler(threading.Thread):
 
             # Отправляем видео в Telegram
             print(f"Отправка видео в Telegram: {filename}")
-            await self.send_telegram_video_async(filename, message=f"Движение обнаружено на камере {self.name}!")
+            await self.send_telegram_video_async(filename, message=message)  # Используем переданное сообщение
 
         except Exception as e:
             print(f"Ошибка при записи/перекодировании видео: {e}")
@@ -422,7 +437,7 @@ class CameraHandler(threading.Thread):
                 with open(filename, 'rb') as photo:
                     data = aiohttp.FormData()
                     data.add_field('chat_id', chat_id)
-                    data.add_field('caption', message)
+                    data.add_field('caption', message)  # Используем переданное сообщение
                     data.add_field('photo', photo, filename=filename)
                     async with session.post(url, data=data) as response:
                         if response.status != 200:
@@ -446,7 +461,7 @@ class CameraHandler(threading.Thread):
                 with open(video_path, 'rb') as video:
                     data = aiohttp.FormData()
                     data.add_field('chat_id', chat_id)
-                    data.add_field('caption', message)
+                    data.add_field('caption', message)  # Используем переданное сообщение
                     data.add_field('video', video, filename=os.path.basename(video_path))
                     async with session.post(url, data=data) as response:
                         if response.status != 200:
@@ -460,6 +475,11 @@ class CameraHandler(threading.Thread):
     def stop(self):
         """Останавливает поток."""
         self.is_running = False
+
+    def restart(self):
+        """Перезапускает поток."""
+        self.stop()
+        self.start()
 
     def run(self):
         asyncio.set_event_loop(self.loop)
