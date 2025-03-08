@@ -1,0 +1,78 @@
+cameras:
+  - id: 1
+    name: "Camera1"
+    rtsp_url: "rtsp://192.168.2.5:554/user=video_password=video_channel=0_stream=0&onvif=0.sdp?real_stream"
+    protocols: "tcp"  # Указываем использование TCP
+    width: 3840
+    height: 2160
+    fps: 25  # Может быть None, если FPS определяется автоматически
+    enabled: true
+    detect_motion: true
+    detect_objects: true
+    object_confidence: 0.1
+    telegram_chat_id: "-1001234567890"
+    send_photo: true
+    send_video: true
+    draw_boxes: true
+    codec: "hevc"
+    reencode_to_h264: false
+    test_frame_on_start: true
+    test_video_on_start: true
+    motion_sensitivity: 0.2
+    record_audio: true
+    reconnect_attempts: 5
+    reconnect_delay: 10
+    show_live_feed: false
+    object_types: ["person", "cat", "dog"]  # Добавлено
+
+  - id: 2
+    name: "Camera1"
+    rtsp_url: "rtsp://192.168.2.7:554/user=video_password=video_channel=0_stream=0"
+    protocols: "tcp"  # Указываем использование TCP
+    width: 1920
+    height: 1080
+    fps: 25  # Может быть None, если FPS определяется автоматически
+    enabled: true
+    detect_motion: true
+    detect_objects: true
+    object_confidence: 0.2
+    telegram_chat_id: "-1001234567890"
+    send_photo: true
+    send_video: true
+    draw_boxes: true
+    codec: "h264"
+    reencode_to_h264: false
+    test_frame_on_start: true
+    test_video_on_start: true
+    motion_sensitivity: 0.2
+    record_audio: true
+    reconnect_attempts: 5
+    reconnect_delay: 10
+    show_live_feed: false
+    object_types: ["person", "cat", "dog"]  # Добавлено
+
+  - id: 3
+    name: "Camera3"
+    rtsp_url: "rtsp://video:video@192.168.1.22:554/stream1"
+    protocols: "tcp"  # Указываем использование TCP
+    width: 1920
+    height: 1080
+    fps: 25  # Может быть None, если FPS определяется автоматически
+    enabled: true
+    detect_motion: true
+    detect_objects: true
+    object_confidence: 0.2
+    telegram_chat_id: "-1001234567890"
+    send_photo: true
+    send_video: true
+    draw_boxes: true
+    codec: "h264"
+    reencode_to_h264: false
+    test_frame_on_start: true
+    test_video_on_start: true
+    motion_sensitivity: 0.5
+    record_audio: false
+    reconnect_attempts: 5
+    reconnect_delay: 10
+    show_live_feed: false
+    object_types: ["person", "cat", "dog", "bird"]  # Добавлено
