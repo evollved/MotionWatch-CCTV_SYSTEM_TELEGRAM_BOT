@@ -59,8 +59,8 @@
 
 3. Склонируйте репозиторий:
    ```bash
-   git clone https://github.com/your-repo/video-surveillance-system.git
-   cd video-surveillance-system
+   git clone clone evollved/MotionWatch-CCTV_SYSTEM_TELEGRAM_BOT
+   cd MotionWatch-CCTV_SYSTEM_TELEGRAM_BOT
    ```
 
 4. Настройте конфигурационные файлы:
